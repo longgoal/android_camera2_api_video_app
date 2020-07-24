@@ -5,12 +5,19 @@
     android:layout_height="match_parent"
     tools:context="mobapptut.com.camera2videoimage.Camera2VideoImageActivity">
 
-    <TextureView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+    <mobapptut.com.camera2videoimage.AutoFitTextureView
+        android:layout_width="320dp"
+        android:layout_height="240dp"
         android:id="@+id/textureView"
         android:layout_alignParentTop="true"
         android:layout_alignParentStart="true" />
+    <mobapptut.com.camera2videoimage.AutoFitTextureView
+        android:layout_width="320dp"
+        android:layout_height="240dp"
+        android:id="@+id/textureView2"
+        android:layout_below="@id/textureView"
+        android:layout_marginTop="100dp"
+        />
 
     <ImageButton
         android:layout_width="wrap_content"
