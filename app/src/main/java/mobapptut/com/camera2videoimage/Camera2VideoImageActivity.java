@@ -25,6 +25,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.SystemClock;
+import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -62,6 +63,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     private static final int REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION_RESULT = 1;
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
+    private long mLastTimestamp;
     private int mCaptureState = STATE_PREVIEW;
     private AutoFitTextureView mTextureView;
     private AutoFitTextureView mTextureView2;
@@ -198,6 +200,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
+                    Log.d(TAG,"onImageAvailable="+reader);
                     mBackgroundHandler.post(new ImageSaver(reader.acquireLatestImage()));
                 }
             };
@@ -256,9 +259,10 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                         case STATE_WAIT_LOCK:
                             mCaptureState = STATE_PREVIEW;
                             Integer afState = captureResult.get(CaptureResult.CONTROL_AF_STATE);
+                            Log.d(TAG,"afState="+afState);
 //                            if(afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
 //                                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
-                                Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
+                                //Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
                                 startStillCaptureRequest();
 //                            }
                             break;
@@ -597,7 +601,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 }
 
             } else {
-                //cameraManager.openCamera(mCameraId, mCameraDeviceStateCallback, mBackgroundHandler);
+                cameraManager.openCamera(mCameraId2, mCameraDeviceStateCallback, mBackgroundHandler);
             }
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -662,7 +666,20 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                             mPreviewCaptureSession = session;
                             try {
                                 mPreviewCaptureSession.setRepeatingRequest(mCaptureRequestBuilder.build(),
-                                        null, mBackgroundHandler);
+                                        new CameraCaptureSession.CaptureCallback() {
+                                            @Override
+                                            public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                                                Log.d(TAG,"onCaptureCompleted 1111111");
+                                            }
+                                        }, mBackgroundHandler);
+                                mPreviewCaptureSession.setRepeatingRequest(mCaptureRequestBuilder.build(),
+                                        new CameraCaptureSession.CaptureCallback() {
+                                            @Override
+                                            public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                                                Log.d(TAG,"onCaptureCompleted 2222222");
+                                            }
+                                        }, mBackgroundHandler);
+
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -694,8 +711,60 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                             Log.d(TAG, "onConfigured: startPreview");
                             mPreviewCaptureSession2 = session;
                             try {
+                                mLastTimestamp = 0;
                                 mPreviewCaptureSession2.setRepeatingRequest(mCaptureRequestBuilder2.build(),
-                                        null, mBackgroundHandler);
+                                //mPreviewCaptureSession2.setRepeatingBurst(Arrays.asList(mCaptureRequestBuilder2.build()),
+                                    new CameraCaptureSession.CaptureCallback(){
+                                        @Override
+                                        public void onCaptureCompleted(CameraCaptureSession session,CaptureRequest request,TotalCaptureResult result){
+//                                            long internalTime = 0;
+//                                            if(mLastTimestamp ==0)
+//                                                mLastTimestamp = timestamp;
+//                                            else {
+//                                                internalTime = timestamp - mLastTimestamp;
+//                                                mLastTimestamp = timestamp;
+//                                            }
+                                            Log.d(TAG,"CaptureCallback onCaptureCompleted 1111111111");
+                                        }
+                                        @Override
+                                        public void onCaptureStarted(CameraCaptureSession session,CaptureRequest request,long timestamp,long frameNumber){
+//                                                long internalTime = 0;
+//                                                if(mLastTimestamp ==0)
+//                                                    mLastTimestamp = timestamp;
+//                                                else {
+//                                                    internalTime = timestamp - mLastTimestamp;
+//                                                    mLastTimestamp = timestamp;
+//                                                }
+                                            Log.d(TAG,"CaptureCallback onCaptureStarted 1111111111");
+                                        }
+
+                                    }, mBackgroundHandler);
+                                //mPreviewCaptureSession2.setRepeatingRequest(mCaptureRequestBuilder2.build(),
+                                mPreviewCaptureSession2.setRepeatingBurst(Arrays.asList(mCaptureRequestBuilder2.build()),
+                                        new CameraCaptureSession.CaptureCallback(){
+                                            @Override
+                                            public void onCaptureStarted(CameraCaptureSession session,CaptureRequest request,long timestamp,long frameNumber){
+//                                                long internalTime = 0;
+//                                                if(mLastTimestamp ==0)
+//                                                    mLastTimestamp = timestamp;
+//                                                else {
+//                                                    internalTime = timestamp - mLastTimestamp;
+//                                                    mLastTimestamp = timestamp;
+//                                                }
+                                                Log.d(TAG,"CaptureCallback onCaptureStarted 222222222");
+                                            }
+                                            @Override
+                                            public void onCaptureCompleted(CameraCaptureSession session,CaptureRequest request,TotalCaptureResult result){
+//                                            long internalTime = 0;
+//                                            if(mLastTimestamp ==0)
+//                                                mLastTimestamp = timestamp;
+//                                            else {
+//                                                internalTime = timestamp - mLastTimestamp;
+//                                                mLastTimestamp = timestamp;
+//                                            }
+                                                Log.d(TAG,"CaptureCallback onCaptureCompleted 222222222");
+                                            }
+                                        }, mBackgroundHandler);
                             } catch (CameraAccessException e) {
                                 e.printStackTrace();
                             }
@@ -896,6 +965,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     private void lockFocus() {
+        Log.d(TAG,"afState= begin");
         mCaptureState = STATE_WAIT_LOCK;
         mCaptureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
         try {
