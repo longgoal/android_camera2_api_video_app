@@ -33,10 +33,10 @@
     <ImageButton
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:id="@+id/cameraImageButton2"
+        android:id="@+id/cameraImageButton"
         android:contentDescription="@string/camera_button"
         android:src="@mipmap/btn_camera"
-        android:layout_alignTop="@+id/videoOnlineImageButton"
+        android:layout_alignTop="@id/videoOnlineImageButton"
         android:layout_alignParentStart="true"
         android:layout_marginStart="50dp" />
 
@@ -78,10 +78,10 @@
         <ImageButton
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:id="@+id/cameraImageButton2_2"
+            android:id="@+id/cameraImageButton2"
             android:contentDescription="@string/camera_button"
             android:src="@mipmap/btn_camera"
-            android:layout_alignTop="@+id/videoOnlineImageButton2"
+            android:layout_alignTop="@id/videoOnlineImageButton2"
             android:layout_alignParentStart="true"
             android:layout_marginStart="50dp" />
 
@@ -93,6 +93,6 @@
             android:textColor="#ff0000"
             android:textSize="25dp"
 
-            android:layout_alignStart="@+id/videoOnlineImageButton2" />
+            android:layout_alignStart="@id/videoOnlineImageButton2" />
     </RelativeLayout>
 </RelativeLayout>

@@ -65,8 +65,11 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     private static final int STATE_WAIT_LOCK = 1;
     private long mLastTimestamp;
     private int mCaptureState = STATE_PREVIEW;
+    private int mCaptureState2 = STATE_PREVIEW;
     private AutoFitTextureView mTextureView;
     private AutoFitTextureView mTextureView2;
+    private int mSwitchCamera = 0;//0 mTextureView,index 0,back camera;1 mTextureView2,index 1 ,front camera;
+    Handler mHandler = new Handler();
     private TextureView.SurfaceTextureListener mSurfaceTextureListener = new TextureView.SurfaceTextureListener() {
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
@@ -116,11 +119,12 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         }
     };
     private CameraDevice mCameraDevice;
-    private CameraDevice mCameraDevice2;
     private CameraDevice.StateCallback mCameraDeviceStateCallback = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(CameraDevice camera) {
-            Log.d(TAG,"onOpened 1");
+            Log.d(TAG,"onOpened index 0");
+            Toast.makeText(getApplicationContext(),
+                    "onOpened index 0 connection made!", Toast.LENGTH_SHORT).show();
             mCameraDevice = camera;
             mMediaRecorder = new MediaRecorder();
             if(mIsRecording) {
@@ -142,29 +146,55 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             } else {
                 startPreview();
             }
-            // Toast.makeText(getApplicationContext(),
-            //         "Camera connection made!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getApplicationContext(),
+                     "Camera index 0 connection made!", Toast.LENGTH_SHORT).show();
         }
 
         @Override
         public void onDisconnected(CameraDevice camera) {
             camera.close();
             mCameraDevice = null;
+            Toast.makeText(getApplicationContext(),
+                    "Camera index 0 disconnection !", Toast.LENGTH_SHORT).show();
         }
 
         @Override
         public void onError(CameraDevice camera, int error) {
             camera.close();
             mCameraDevice = null;
+            Toast.makeText(getApplicationContext(),
+                    "Camera index 0 error !", Toast.LENGTH_SHORT).show();
         }
     };
+    private CameraDevice mCameraDevice2;
     private CameraDevice.StateCallback mCameraDeviceStateCallback2 = new CameraDevice.StateCallback() {
         @Override
         public void onOpened(CameraDevice camera) {
+            Log.d(TAG,"onOpened index 1");
             mCameraDevice2 = camera;
+            mMediaRecorder2 = new MediaRecorder();
+            if(mIsRecording2) {
+                try {
+                    createVideoFileName();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                startRecord2();
+                mMediaRecorder2.start();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mChronometer2.setBase(SystemClock.elapsedRealtime());
+                        mChronometer2.setVisibility(View.VISIBLE);
+                        mChronometer2.start();
+                    }
+                });
+            } else {
+                startPreview2();
+            }
+
              Toast.makeText(getApplicationContext(),
-                     "onOpened 2 connection made!", Toast.LENGTH_SHORT).show();
-             startPreview2();
+                     "onOpened index 1 connection made!", Toast.LENGTH_SHORT).show();
         }
 
         @Override
@@ -172,7 +202,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             camera.close();
             mCameraDevice2 = null;
             Toast.makeText(getApplicationContext(),
-                    "Camera 2 disconnection !", Toast.LENGTH_SHORT).show();
+                    "Camera index 1 disconnection !", Toast.LENGTH_SHORT).show();
 
         }
 
@@ -181,22 +211,34 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             camera.close();
             mCameraDevice2 = null;
             Toast.makeText(getApplicationContext(),
-                    "Camera 2 error !", Toast.LENGTH_SHORT).show();
+                    "Camera index 1 error !", Toast.LENGTH_SHORT).show();
         }
     };
     private HandlerThread mBackgroundHandlerThread;
     private Handler mBackgroundHandler;
+
+    //camera index 0
     private String mCameraId;
-    private String mCameraId2;
     private Size mPreviewSize;
     private Size mVideoSize;
     private Size mImageSize;
+    private ImageReader mImageReader;
+    //camera index 1
+    private String mCameraId2;
     private Size mPreviewSize2;
     private Size mVideoSize2;
     private Size mImageSize2;
-    private ImageReader mImageReader;
     private ImageReader mImageReader2;
+
     private final ImageReader.OnImageAvailableListener mOnImageAvailableListener = new
+            ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    Log.d(TAG,"onImageAvailable="+reader);
+                    mBackgroundHandler.post(new ImageSaver(reader.acquireLatestImage()));
+                }
+            };
+    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener2 = new
             ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
@@ -242,12 +284,16 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
         }
     }
+    //camera index 0
     private MediaRecorder mMediaRecorder;
     private Chronometer mChronometer;
     private int mTotalRotation;
+    //camera index 1
+    private MediaRecorder mMediaRecorder2;
+    private Chronometer mChronometer2;
     private int mTotalRotation2;
+
     private CameraCaptureSession mPreviewCaptureSession;
-    private CameraCaptureSession mPreviewCaptureSession2;
     private CameraCaptureSession.CaptureCallback mPreviewCaptureCallback = new
             CameraCaptureSession.CaptureCallback() {
 
@@ -276,6 +322,37 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     process(result);
                 }
             };
+    private CameraCaptureSession mPreviewCaptureSession2;
+    private CameraCaptureSession.CaptureCallback mPreviewCaptureCallback2 = new
+            CameraCaptureSession.CaptureCallback() {
+
+                private void process2(CaptureResult captureResult) {
+                    switch (mCaptureState2) {
+                        case STATE_PREVIEW:
+                            // Do nothing
+                            break;
+                        case STATE_WAIT_LOCK:
+                            mCaptureState2 = STATE_PREVIEW;
+                            Integer afState = captureResult.get(CaptureResult.CONTROL_AF_STATE);
+                            Log.d(TAG,"afState="+afState);
+//                            if(afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+//                                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
+                            //Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
+                            startStillCaptureRequest2();
+//                            }
+                            break;
+                    }
+                }
+
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+
+                    process2(result);
+                }
+            };
+
+
     private CameraCaptureSession mRecordCaptureSession;
     private CameraCaptureSession.CaptureCallback mRecordCaptureCallback = new
             CameraCaptureSession.CaptureCallback() {
@@ -304,13 +381,46 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     process(result);
                 }
             };
-    private CaptureRequest.Builder mCaptureRequestBuilder;
-    private CaptureRequest.Builder mCaptureRequestBuilder2;
+    private CameraCaptureSession mRecordCaptureSession2;
+    private CameraCaptureSession.CaptureCallback mRecordCaptureCallback2 = new
+            CameraCaptureSession.CaptureCallback() {
 
+                private void process2(CaptureResult captureResult) {
+                    switch (mCaptureState2) {
+                        case STATE_PREVIEW:
+                            // Do nothing
+                            break;
+                        case STATE_WAIT_LOCK:
+                            mCaptureState2 = STATE_PREVIEW;
+                            Integer afState = captureResult.get(CaptureResult.CONTROL_AF_STATE);
+//                            if(afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+//                                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
+                            Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
+                            startStillCaptureRequest2();
+//                            }
+                            break;
+                    }
+                }
+
+                @Override
+                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+
+                    process2(result);
+                }
+            };
+    //camera index 0
+    private CaptureRequest.Builder mCaptureRequestBuilder;
     private ImageButton mRecordImageButton;
     private ImageButton mStillImageButton;
     private boolean mIsRecording = false;
     private boolean mIsTimelapse = false;
+    //camera index 1
+    private CaptureRequest.Builder mCaptureRequestBuilder2;
+    private ImageButton mRecordImageButton2;
+    private ImageButton mStillImageButton2;
+    private boolean mIsRecording2 = false;
+    private boolean mIsTimelapse2 = false;
 
     private File mVideoFolder;
     private String mVideoFileName;
@@ -354,59 +464,118 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         createImageFolder();
 
         mChronometer = (Chronometer) findViewById(R.id.chronometer);
+        mChronometer2 = (Chronometer) findViewById(R.id.chronometer2);
         mTextureView = (AutoFitTextureView) findViewById(R.id.textureView);
         mTextureView2 = (AutoFitTextureView) findViewById(R.id.textureView2);
         mTextureView.setAspectRatio(480,640);
         mTextureView2.setAspectRatio(480,640);
-        mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
-        mTextureView2.setSurfaceTextureListener(mSurfaceTextureListener2);
-        mStillImageButton = (ImageButton) findViewById(R.id.cameraImageButton2);
-        mStillImageButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if(!(mIsTimelapse || mIsRecording)) {
-                    checkWriteStoragePermission();
+        if(mSwitchCamera == 0)
+            mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
+        else
+            mTextureView2.setSurfaceTextureListener(mSurfaceTextureListener2);
+        mStillImageButton = (ImageButton) findViewById(R.id.cameraImageButton);
+        mStillImageButton2 = (ImageButton) findViewById(R.id.cameraImageButton2);
+        if(mSwitchCamera == 0) {
+            mStillImageButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (!(mIsTimelapse || mIsRecording)) {
+                        checkWriteStoragePermission();
+                    }
+                    lockFocus();
                 }
-                lockFocus();
-            }
-        });
+            });
+        } else {
+            mStillImageButton2.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (!(mIsTimelapse2 || mIsRecording2)) {
+                        checkWriteStoragePermission2();
+                    }
+                    lockFocus2();
+                }
+            });
+        }
         mRecordImageButton = (ImageButton) findViewById(R.id.videoOnlineImageButton);
-        mRecordImageButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mIsRecording || mIsTimelapse) {
-                    mChronometer.stop();
-                    mChronometer.setVisibility(View.INVISIBLE);
-                    mIsRecording = false;
-                    mIsTimelapse = false;
-                    mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
+        mRecordImageButton2 = (ImageButton) findViewById(R.id.videoOnlineImageButton2);
+        if(mSwitchCamera ==0) {
+            mRecordImageButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (mIsRecording || mIsTimelapse) {
+                        mChronometer.stop();
+                        mChronometer.setVisibility(View.INVISIBLE);
+                        mIsRecording = false;
+                        mIsTimelapse = false;
+                        mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
 
-                    // Starting the preview prior to stopping recording which should hopefully
-                    // resolve issues being seen in Samsung devices.
-                    startPreview();
-                    mMediaRecorder.stop();
-                    mMediaRecorder.reset();
+                        // Starting the preview prior to stopping recording which should hopefully
+                        // resolve issues being seen in Samsung devices.
+                        startPreview();
+                        mMediaRecorder.stop();
+                        mMediaRecorder.reset();
 
-                    Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-                    mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
-                    sendBroadcast(mediaStoreUpdateIntent);
+                        Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                        mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+                        sendBroadcast(mediaStoreUpdateIntent);
 
-                } else {
-                    mIsRecording = true;
-                    mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
-                    checkWriteStoragePermission();
+                    } else {
+                        mIsRecording = true;
+                        mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+                        checkWriteStoragePermission();
+                    }
                 }
-            }
-        });
-        mRecordImageButton.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                mIsTimelapse =true;
-                mRecordImageButton.setImageResource(R.mipmap.btn_timelapse);
-                checkWriteStoragePermission();
-                return true;
-            }
-        });
+            });
+        } else {
+            mRecordImageButton2.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (mIsRecording2 || mIsTimelapse2) {
+                        mChronometer2.stop();
+                        mChronometer2.setVisibility(View.INVISIBLE);
+                        mIsRecording2 = false;
+                        mIsTimelapse2 = false;
+                        mRecordImageButton2.setImageResource(R.mipmap.btn_video_online);
+
+                        // Starting the preview prior to stopping recording which should hopefully
+                        // resolve issues being seen in Samsung devices.
+                        startPreview2();
+                        mMediaRecorder2.stop();
+                        mMediaRecorder2.reset();
+
+                        Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                        mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+                        sendBroadcast(mediaStoreUpdateIntent);
+
+                    } else {
+                        mIsRecording2 = true;
+                        mRecordImageButton2.setImageResource(R.mipmap.btn_video_busy);
+                        checkWriteStoragePermission2();
+                    }
+                }
+            });
+        }
+        if(mSwitchCamera == 0) {
+            mRecordImageButton.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    mIsTimelapse = true;
+                    mRecordImageButton.setImageResource(R.mipmap.btn_timelapse);
+                    checkWriteStoragePermission();
+                    return true;
+                }
+            });
+        } else {
+            mRecordImageButton2.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    mIsTimelapse2 = true;
+                    mRecordImageButton2.setImageResource(R.mipmap.btn_timelapse);
+                    checkWriteStoragePermission2();
+                    return true;
+                }
+            });
+        }
     }
 
     @Override
@@ -415,19 +584,22 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
         startBackgroundThread();
         Log.d(TAG,"onResume mTextureView.isAvailable()="+mTextureView.isAvailable());
-        if(mTextureView.isAvailable()) {
-            Log.d(TAG,"onResume call setupCamera");
-            setupCamera(mTextureView.getWidth(), mTextureView.getHeight());
-            connectCamera();
+        if(mSwitchCamera == 0) {
+            if (mTextureView.isAvailable()) {
+                Log.d(TAG, "onResume call setupCamera");
+                setupCamera(mTextureView.getWidth(), mTextureView.getHeight());
+                connectCamera();
+            } else {
+                mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
+            }
         } else {
-            mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
-        }
-        if(mTextureView2.isAvailable()) {
-            Log.d(TAG,"onResume call setupCamera");
-            setupCamera2(mTextureView2.getWidth(), mTextureView2.getHeight());
-            connectCamera2();
-        } else {
-            mTextureView2.setSurfaceTextureListener(mSurfaceTextureListener2);
+            if (mTextureView2.isAvailable()) {
+                Log.d(TAG, "onResume call setupCamera");
+                setupCamera2(mTextureView2.getWidth(), mTextureView2.getHeight());
+                connectCamera2();
+            } else {
+                mTextureView2.setSurfaceTextureListener(mSurfaceTextureListener2);
+            }
         }
     }
 
@@ -446,9 +618,16 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         }
         if(requestCode == REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION_RESULT) {
             if(grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                if(mIsRecording || mIsTimelapse) {
-                    mIsRecording = true;
-                    mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+                if(mSwitchCamera == 0) {
+                    if (mIsRecording || mIsTimelapse) {
+                        mIsRecording = true;
+                        mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+                    }
+                } else {
+                    if (mIsRecording2 || mIsTimelapse2) {
+                        mIsRecording2 = true;
+                        mRecordImageButton2.setImageResource(R.mipmap.btn_video_busy);
+                    }
                 }
                 Toast.makeText(this,
                         "Permission successfully granted!", Toast.LENGTH_SHORT).show();
@@ -463,7 +642,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     protected void onPause() {
         Log.d(TAG,"onPause call cloaseCamera");
         closeCamera();
-
+        closeCamera2();
         stopBackgroundThread();
 
         super.onPause();
@@ -489,7 +668,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             for(String cameraId : cameraManager.getCameraIdList()){
                 CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
                 if(cameraCharacteristics.get(CameraCharacteristics.LENS_FACING) ==
-                        CameraCharacteristics.LENS_FACING_BACK){
+                        CameraCharacteristics.LENS_FACING_FRONT){
 
                     continue;
                 }
@@ -528,7 +707,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             for(String cameraId : cameraManager.getCameraIdList()){
                 CameraCharacteristics cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId);
                 if(cameraCharacteristics.get(CameraCharacteristics.LENS_FACING) ==
-                        CameraCharacteristics.LENS_FACING_FRONT){
+                        CameraCharacteristics.LENS_FACING_BACK){
                     continue;
                 }
                 StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
@@ -546,11 +725,12 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 //mPreviewSize = new Size(1280,720);
                 mVideoSize2 = chooseOptimalSize(map.getOutputSizes(MediaRecorder.class), rotatedWidth, rotatedHeight);
                 //mVideoSize = new Size(1280,720);
-                Log.d(TAG,"mVideoSiz2e="+mVideoSize);
+                Log.d(TAG,"mVideoSize2="+mVideoSize2);
                 mImageSize2 = chooseOptimalSize(map.getOutputSizes(ImageFormat.JPEG), rotatedWidth, rotatedHeight);
                 //mImageSize = new Size(1280,720);
                 Log.d(TAG,"mImageSize2="+mImageSize2);
                 mImageReader2 = ImageReader.newInstance(mImageSize2.getWidth(), mImageSize2.getHeight(), ImageFormat.JPEG, 1);
+                mImageReader2.setOnImageAvailableListener(mOnImageAvailableListener2, mBackgroundHandler);
                 mCameraId2 = cameraId;
                 return;
             }
@@ -649,6 +829,47 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
+    private void startRecord2() {
+
+        try {
+            if(mIsRecording2) {
+                setupMediaRecorder2();
+            } else if(mIsTimelapse2) {
+                setupTimelapse2();
+            }
+            SurfaceTexture surfaceTexture = mTextureView2.getSurfaceTexture();
+            surfaceTexture.setDefaultBufferSize(mPreviewSize2.getWidth(), mPreviewSize2.getHeight());
+            Surface previewSurface = new Surface(surfaceTexture);
+            Surface recordSurface = mMediaRecorder2.getSurface();
+            mCaptureRequestBuilder2 = mCameraDevice2.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+            mCaptureRequestBuilder2.addTarget(previewSurface);
+            mCaptureRequestBuilder2.addTarget(recordSurface);
+
+            mCameraDevice2.createCaptureSession(Arrays.asList(previewSurface, recordSurface, mImageReader2.getSurface()),
+                    new CameraCaptureSession.StateCallback() {
+                        @Override
+                        public void onConfigured(CameraCaptureSession session) {
+                            mRecordCaptureSession2 = session;
+                            try {
+                                mRecordCaptureSession2.setRepeatingRequest(
+                                        mCaptureRequestBuilder2.build(), null, null
+                                );
+                            } catch (CameraAccessException e) {
+                                e.printStackTrace();
+                            }
+                        }
+
+                        @Override
+                        public void onConfigureFailed(CameraCaptureSession session) {
+                            Log.d(TAG, "onConfigureFailed: startRecord");
+                        }
+                    }, null);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     private void startPreview() {
         SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
         surfaceTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
@@ -724,7 +945,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 //                                                internalTime = timestamp - mLastTimestamp;
 //                                                mLastTimestamp = timestamp;
 //                                            }
-                                            Log.d(TAG,"CaptureCallback onCaptureCompleted 1111111111");
+                                            //Log.d(TAG,"CaptureCallback onCaptureCompleted 1111111111");
                                         }
                                         @Override
                                         public void onCaptureStarted(CameraCaptureSession session,CaptureRequest request,long timestamp,long frameNumber){
@@ -735,7 +956,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 //                                                    internalTime = timestamp - mLastTimestamp;
 //                                                    mLastTimestamp = timestamp;
 //                                                }
-                                            Log.d(TAG,"CaptureCallback onCaptureStarted 1111111111");
+                                            //Log.d(TAG,"CaptureCallback onCaptureStarted 1111111111");
                                         }
 
                                     }, mBackgroundHandler);
@@ -751,7 +972,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 //                                                    internalTime = timestamp - mLastTimestamp;
 //                                                    mLastTimestamp = timestamp;
 //                                                }
-                                                Log.d(TAG,"CaptureCallback onCaptureStarted 222222222");
+                                                //Log.d(TAG,"CaptureCallback onCaptureStarted 222222222");
                                             }
                                             @Override
                                             public void onCaptureCompleted(CameraCaptureSession session,CaptureRequest request,TotalCaptureResult result){
@@ -762,7 +983,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 //                                                internalTime = timestamp - mLastTimestamp;
 //                                                mLastTimestamp = timestamp;
 //                                            }
-                                                Log.d(TAG,"CaptureCallback onCaptureCompleted 222222222");
+                                                //Log.d(TAG,"CaptureCallback onCaptureCompleted 222222222");
                                             }
                                         }, mBackgroundHandler);
                             } catch (CameraAccessException e) {
@@ -814,8 +1035,55 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
+    private void startStillCaptureRequest2() {
+        try {
+            if(mIsRecording2) {
+                mCaptureRequestBuilder2 = mCameraDevice2.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT);
+            } else {
+                mCaptureRequestBuilder2 = mCameraDevice2.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            }
+            mCaptureRequestBuilder2.addTarget(mImageReader2.getSurface());
+            mCaptureRequestBuilder2.set(CaptureRequest.JPEG_ORIENTATION, mTotalRotation2);
+
+            CameraCaptureSession.CaptureCallback stillCaptureCallback = new
+                    CameraCaptureSession.CaptureCallback() {
+                        @Override
+                        public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request, long timestamp, long frameNumber) {
+                            super.onCaptureStarted(session, request, timestamp, frameNumber);
+
+                            try {
+                                createImageFileName();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    };
+
+            if(mIsRecording2) {
+                mRecordCaptureSession2.capture(mCaptureRequestBuilder2.build(), stillCaptureCallback, null);
+            } else {
+                mPreviewCaptureSession2.capture(mCaptureRequestBuilder2.build(), stillCaptureCallback, null);
+            }
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
 
     private void closeCamera() {
+        if(mIsRecording || mIsTimelapse) {
+            mChronometer.stop();
+            mChronometer.setVisibility(View.INVISIBLE);
+            mIsRecording = false;
+            mIsTimelapse = false;
+            mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
+
+            mMediaRecorder.stop();
+            mMediaRecorder.reset();
+
+            Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+            sendBroadcast(mediaStoreUpdateIntent);
+        }
         if(mCameraDevice != null) {
             mCameraDevice.close();
             mCameraDevice = null;
@@ -826,15 +1094,34 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         }
     }
     private void closeCamera2() {
+        if(mIsRecording2 || mIsTimelapse2) {
+            mChronometer.stop();
+            mChronometer.setVisibility(View.INVISIBLE);
+            mIsRecording = false;
+            mIsTimelapse = false;
+            mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
+
+            mMediaRecorder.stop();
+            mMediaRecorder.reset();
+
+            Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+            sendBroadcast(mediaStoreUpdateIntent);
+        }
         if(mCameraDevice2 != null) {
             mCameraDevice2.close();
             mCameraDevice2 = null;
+        }
+        if(mMediaRecorder2 != null) {
+            mMediaRecorder2.release();
+            mMediaRecorder2 = null;
         }
     }
     private void startBackgroundThread() {
         mBackgroundHandlerThread = new HandlerThread("Camera2VideoImage");
         mBackgroundHandlerThread.start();
         mBackgroundHandler = new Handler(mBackgroundHandlerThread.getLooper());
+//        mBackgroundHandler = new Handler();
     }
 
     private void stopBackgroundThread() {
@@ -872,7 +1159,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     private void createVideoFolder() {
-        File movieFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
+        File movieFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
         mVideoFolder = new File(movieFile, "camera2VideoImage");
         if(!mVideoFolder.exists()) {
             mVideoFolder.mkdirs();
@@ -888,7 +1175,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     private void createImageFolder() {
-        File imageFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        File imageFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
         mImageFolder = new File(imageFile, "camera2VideoImage");
         if(!mImageFolder.exists()) {
             mImageFolder.mkdirs();
@@ -940,6 +1227,43 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             }
         }
     }
+    private void checkWriteStoragePermission2() {
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if(ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED) {
+                try {
+                    createVideoFileName();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                if(mIsTimelapse2 || mIsRecording2) {
+                    startRecord2();
+                    mMediaRecorder2.start();
+                    mChronometer2.setBase(SystemClock.elapsedRealtime());
+                    mChronometer2.setVisibility(View.VISIBLE);
+                    mChronometer2.start();
+                }
+            } else {
+                if(shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    Toast.makeText(this, "app needs to be able to save videos", Toast.LENGTH_SHORT).show();
+                }
+                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION_RESULT);
+            }
+        } else {
+            try {
+                createVideoFileName();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            if(mIsRecording2 || mIsTimelapse2) {
+                startRecord2();
+                mMediaRecorder2.start();
+                mChronometer2.setBase(SystemClock.elapsedRealtime());
+                mChronometer2.setVisibility(View.VISIBLE);
+                mChronometer2.start();
+            }
+        }
+    }
 
     private void setupMediaRecorder() throws IOException {
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -955,6 +1279,20 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mMediaRecorder.prepare();
     }
 
+    private void setupMediaRecorder2() throws IOException {
+        mMediaRecorder2.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder2.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mMediaRecorder2.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        mMediaRecorder2.setOutputFile(mVideoFileName);
+        mMediaRecorder2.setVideoEncodingBitRate(1000000);
+        mMediaRecorder2.setVideoFrameRate(30);
+        mMediaRecorder2.setVideoSize(mVideoSize2.getWidth(), mVideoSize2.getHeight());
+        mMediaRecorder2.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mMediaRecorder2.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        mMediaRecorder2.setOrientationHint(mTotalRotation2);
+        mMediaRecorder2.prepare();
+    }
+
     private void setupTimelapse() throws IOException {
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
         mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_TIME_LAPSE_HIGH));
@@ -962,6 +1300,14 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mMediaRecorder.setCaptureRate(2);
         mMediaRecorder.setOrientationHint(mTotalRotation);
         mMediaRecorder.prepare();
+    }
+    private void setupTimelapse2() throws IOException {
+        mMediaRecorder2.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder2.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_TIME_LAPSE_HIGH));
+        mMediaRecorder2.setOutputFile(mVideoFileName);
+        mMediaRecorder2.setCaptureRate(2);
+        mMediaRecorder2.setOrientationHint(mTotalRotation2);
+        mMediaRecorder2.prepare();
     }
 
     private void lockFocus() {
@@ -973,6 +1319,20 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), mRecordCaptureCallback, mBackgroundHandler);
             } else {
                 mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
+            }
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+    private void lockFocus2() {
+        Log.d(TAG,"afState= begin");
+        mCaptureState2 = STATE_WAIT_LOCK;
+        mCaptureRequestBuilder2.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+        try {
+            if(mIsRecording2) {
+                mRecordCaptureSession2.capture(mCaptureRequestBuilder2.build(), mRecordCaptureCallback2, mBackgroundHandler);
+            } else {
+                mPreviewCaptureSession2.capture(mCaptureRequestBuilder2.build(), mPreviewCaptureCallback2, mBackgroundHandler);
             }
         } catch (CameraAccessException e) {
             e.printStackTrace();
